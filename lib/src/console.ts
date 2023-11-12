@@ -3,9 +3,10 @@ import { EnumCliColors, EnumTemplateCharacters, EnumTemplateParams, ConsoleMetho
 import { TEMPLATE_ERROR, TEMPLATE_INFO, TEMPLATE_LOG, TEMPLATE_WARN, KeysValueTemplateMethods, TemplatesMethods } from './default'
 import { ConsoleConfig, getDefaultConfig, getRegexForCapture, CAPTURE_KEY } from './helpers'
 import { deepMerge } from './util/deep-merge'
-import * as consoleNative from 'console'
 
 /* eslint no-unused-expressions: ["off"] */
+
+const consoleNative = console
 
 export class Console<
     TemplateLog extends string = typeof TEMPLATE_LOG,
