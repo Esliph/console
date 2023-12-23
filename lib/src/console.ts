@@ -3,6 +3,8 @@ import { EnumCliColors, EnumTemplateCharacters, EnumTemplateParams, ConsoleMetho
 import { TEMPLATE_ERROR, TEMPLATE_INFO, TEMPLATE_LOG, TEMPLATE_WARN, KeysValueTemplateMethods, TemplatesMethods } from './default'
 import { ConsoleConfig, getDefaultConfig, getRegexForCapture, CAPTURE_KEY } from './helpers'
 import { deepMerge } from './util/deep-merge'
+import { ConsoleObserverListener } from './observer/listener'
+import { ConsoleObserverEmitter } from './observer/emitter'
 
 /* eslint no-unused-expressions: ["off"] */
 
@@ -13,7 +15,8 @@ export class Console<
     TemplateError extends string = typeof TEMPLATE_ERROR,
     TemplateWarn extends string = typeof TEMPLATE_WARN,
     TemplateInfo extends string = typeof TEMPLATE_INFO
-> {
+> extends ConsoleObserverListener {
+    private observer: ConsoleObserverEmitter
     protected config: ConsoleConfig<TemplateLog, TemplateError, TemplateWarn, TemplateInfo>
     protected methodsValue: KeysValueTemplateMethods<TemplateLog, TemplateError, TemplateWarn, TemplateInfo>
     static readonly native: globalThis.Console = consoleNative
@@ -26,6 +29,10 @@ export class Console<
         } | null = {},
         methodsValue: KeysValueTemplateMethods<TemplateLog, TemplateError, TemplateWarn, TemplateInfo> | null = {}
     ) {
+        super()
+
+        this.observer = new ConsoleObserverEmitter()
+
         this.config = deepMerge({}, getDefaultConfig<TemplateLog, TemplateError, TemplateWarn, TemplateInfo>(args || {}, methodsValue || {}).config, args || {})
         this.methodsValue = deepMerge(
             {},
@@ -116,15 +123,17 @@ export class Console<
 
         const kv = values as Partial<KeysFormTemplate<ExtractKeysName<T>>>
 
-        const templateProcessed = this.processTemplate({ template, keysValues: kv })
+        const { template: templateColorized, templateNotColorized } = this.processTemplate({ template, keysValues: kv })
 
-        Console.native.log(templateProcessed)
+        this.observer.emit(method, templateNotColorized)
+        Console.native.log(templateColorized)
 
-        return templateProcessed
+        return templateColorized
     }
 
     private processTemplate<T extends string>({ template, keysValues }: { template: string; keysValues: KeysInput<T> }) {
         const keys = this.extractKeys(template)
+        const keysNotColorized = this.extractKeys(template)
 
         keys.filter(_k => Object.keys(keysValues).every(_kv => _k.key != _kv)).forEach(_key => {
             const valueParam = _key.params ? _key.params.find(p => p.value)?.value || '' : ''
@@ -152,9 +161,12 @@ export class Console<
                 })
 
             // @ts-expect-error
+            keysNotColorized[index].value = keysValues[key]
+            // @ts-expect-error
             keys[index].value = this.colorizeText(keysValues[key], { background: params.background, color: params.color, styles: params.styles })
         }
 
+        let templateNotColorized = template
         keys.forEach(({ value, key }) => {
             const occurrence = this.getOccurrenceForCapture(template, key)
 
@@ -165,7 +177,17 @@ export class Console<
             template = template.substring(0, occurrence.initial) + value + template.substring(occurrence.final)
         })
 
-        return template
+        keysNotColorized.forEach(({ value, key }) => {
+            const occurrence = this.getOccurrenceForCapture(templateNotColorized, key)
+
+            if (!occurrence) {
+                return
+            }
+
+            templateNotColorized = templateNotColorized.substring(0, occurrence.initial) + value + templateNotColorized.substring(occurrence.final)
+        })
+
+        return { template, templateNotColorized }
     }
 
     private extractKeys(template: string) {
